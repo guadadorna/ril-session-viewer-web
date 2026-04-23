@@ -186,11 +186,13 @@ function parseEventsDetailed(events: Event[]): Turno[] {
           result = tryParseJson(decodeBase64(result));
         }
 
-        // RAG
+        // RAG - soporta tanto formato estructurado (con documentos) como crudo de Vertex AI (con results)
         if (name.includes("rag") && typeof result === "object" && result !== null) {
-          const docs = (result as { documentos?: unknown[] }).documentos;
-          if (Array.isArray(docs)) {
-            for (const doc of docs) {
+          const r = result as Record<string, unknown>;
+
+          // Formato estructurado (después del cambio de la tool)
+          if (Array.isArray(r.documentos)) {
+            for (const doc of r.documentos) {
               if (typeof doc === "object" && doc !== null) {
                 const d = doc as Record<string, unknown>;
                 currentTurno.fuentes.rag.push({
@@ -202,6 +204,59 @@ function parseEventsDetailed(events: Event[]): Turno[] {
                 });
               }
             }
+          }
+          // Formato crudo de Vertex AI (antes del cambio de la tool)
+          // Limitamos a los top 5 por score de similitud
+          else if (Array.isArray(r.results)) {
+            const docsToAdd: RagDoc[] = [];
+
+            for (const item of r.results) {
+              if (typeof item !== "object" || item === null) continue;
+              const resultItem = item as Record<string, unknown>;
+              const document = resultItem.document as Record<string, unknown> | undefined;
+              if (!document) continue;
+
+              const structData = document.structData as Record<string, unknown> | undefined;
+              const derivedData = document.derivedStructData as Record<string, unknown> | undefined;
+              const rankSignals = resultItem.rankSignals as Record<string, unknown> | undefined;
+
+              // Extraer título y URI (puede estar en structData o derivedStructData)
+              let titulo = "";
+              let uri = "";
+
+              if (structData) {
+                titulo = String(structData.title || "");
+                uri = String(structData.uri || "");
+              }
+              if (derivedData) {
+                if (!titulo) titulo = String(derivedData.title || "");
+                if (!uri) uri = String(derivedData.link || derivedData.url || "");
+              }
+
+              // Extraer metadata
+              const tipoContenido = structData?.tipo_de_contenido;
+              const usoAgente = structData?.uso_agente;
+
+              // Extraer score
+              let score = 0;
+              if (rankSignals) {
+                score = Number(rankSignals.semanticSimilarityScore || 0);
+              }
+
+              docsToAdd.push({
+                titulo,
+                uri,
+                score,
+                tipo: Array.isArray(tipoContenido) ? tipoContenido.join(", ") : String(tipoContenido || ""),
+                uso: Array.isArray(usoAgente) ? usoAgente.join(", ") : String(usoAgente || ""),
+              });
+            }
+
+            // Filtrar solo documentos con score >= 0.65 (65% de similitud)
+            const relevantDocs = docsToAdd.filter(d => d.score >= 0.65);
+            // Ordenar por score descendente
+            relevantDocs.sort((a, b) => b.score - a.score);
+            currentTurno.fuentes.rag.push(...relevantDocs);
           }
         }
 
