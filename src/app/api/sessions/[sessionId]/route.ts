@@ -302,17 +302,18 @@ export async function GET(
       [sessionId]
     );
 
-    // Debug: log first few events to see structure
-    console.log("Total events:", result.rows.length);
-    if (result.rows.length > 0) {
-      const firstEvent = result.rows[0];
-      console.log("First event author:", firstEvent.author);
-      console.log("First event content type:", typeof firstEvent.content);
-      console.log("First event content sample:", JSON.stringify(firstEvent.content).substring(0, 500));
-    }
-
     const turnos = parseEventsDetailed(result.rows);
-    console.log("Parsed turnos:", turnos.length);
+
+    // Debug info
+    const debug = {
+      totalEvents: result.rows.length,
+      totalTurnos: turnos.length,
+      firstEventSample: result.rows.length > 0 ? {
+        author: result.rows[0].author,
+        contentType: typeof result.rows[0].content,
+        contentSample: JSON.stringify(result.rows[0].content).substring(0, 300),
+      } : null,
+    };
 
     // Calcular estadísticas
     const stats = {
@@ -322,7 +323,7 @@ export async function GET(
       totalMemoriaGuardada: turnos.reduce((sum, t) => sum + t.fuentes.memoria_guardada.length, 0),
     };
 
-    return NextResponse.json({ sessionId, turnos, stats });
+    return NextResponse.json({ sessionId, turnos, stats, debug });
   } catch (error) {
     console.error("Session detail error:", error);
     return NextResponse.json(
