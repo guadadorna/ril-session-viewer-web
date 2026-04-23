@@ -1,6 +1,17 @@
 import { NextRequest, NextResponse } from "next/server";
 import pool from "@/lib/db";
 
+interface Part {
+  text?: string;
+  functionCall?: unknown;
+  functionResponse?: unknown;
+}
+
+interface Content {
+  parts?: Part[];
+  role?: string;
+}
+
 interface Event {
   id: string;
   session_id: string;
@@ -8,13 +19,12 @@ interface Event {
   app_name: string;
   author: string;
   timestamp: string;
-  content: Record<string, unknown>;
+  content: Content | string;
 }
 
 interface ParsedMessage {
   tipo: string;
   contenido: string;
-  fuentes?: string[];
   timestamp: string;
 }
 
@@ -22,36 +32,32 @@ function parseEvents(events: Event[]): ParsedMessage[] {
   const messages: ParsedMessage[] = [];
 
   for (const event of events) {
-    const content = event.content || {};
+    let content = event.content;
     const timestamp = event.timestamp;
     const author = event.author;
 
-    if (author === "user") {
-      // Mensaje del usuario
-      const parts = content.parts as Array<{ text?: string }> | undefined;
-      const text = parts?.[0]?.text || JSON.stringify(content);
-      messages.push({
-        tipo: "usuario",
-        contenido: text,
-        timestamp,
-      });
-    } else {
-      // Respuesta del agente
-      const parts = content.parts as Array<{ text?: string }> | undefined;
-      const text = parts?.[0]?.text || JSON.stringify(content);
-
-      // Buscar fuentes en el contenido
-      const fuentes: string[] = [];
-      if (content.grounding_metadata) {
-        fuentes.push("RAG");
+    // content puede venir como string JSON
+    if (typeof content === "string") {
+      try {
+        content = JSON.parse(content);
+      } catch {
+        continue;
       }
+    }
 
-      messages.push({
-        tipo: "agente",
-        contenido: text,
-        fuentes: fuentes.length > 0 ? fuentes : undefined,
-        timestamp,
-      });
+    if (!content || typeof content !== "object") continue;
+
+    const parts = (content as Content).parts || [];
+
+    for (const part of parts) {
+      // Solo procesar partes con texto (ignorar functionCall y functionResponse)
+      if (part.text) {
+        messages.push({
+          tipo: author === "user" ? "usuario" : "agente",
+          contenido: part.text,
+          timestamp,
+        });
+      }
     }
   }
 
