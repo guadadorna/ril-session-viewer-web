@@ -18,15 +18,15 @@ export default function SessionsPage() {
   const router = useRouter();
 
   useEffect(() => {
-    const email = sessionStorage.getItem("userEmail");
+    const userName = sessionStorage.getItem("userName");
     const userId = sessionStorage.getItem("userId");
 
-    if (!email || !userId) {
+    if (!userName || !userId) {
       router.push("/");
       return;
     }
 
-    fetch(`/api/sessions?email=${encodeURIComponent(email)}&userId=${encodeURIComponent(userId)}`)
+    fetch(`/api/sessions?userId=${encodeURIComponent(userId)}`)
       .then((res) => res.json())
       .then((data) => {
         if (data.error) {

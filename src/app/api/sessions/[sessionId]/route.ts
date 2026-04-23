@@ -1,11 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
-import { isAuthorizedEmail } from "@/lib/auth";
 import pool from "@/lib/db";
 
 interface Event {
+  id: string;
+  session_id: string;
+  user_id: string;
+  app_name: string;
+  author: string;
   timestamp: string;
-  event_type: string;
-  event_data: Record<string, unknown>;
+  content: Record<string, unknown>;
 }
 
 interface ParsedMessage {
@@ -19,49 +22,36 @@ function parseEvents(events: Event[]): ParsedMessage[] {
   const messages: ParsedMessage[] = [];
 
   for (const event of events) {
-    const data = event.event_data;
+    const content = event.content || {};
     const timestamp = event.timestamp;
+    const author = event.author;
 
-    if (event.event_type === "user_message") {
+    if (author === "user") {
+      // Mensaje del usuario
+      const parts = content.parts as Array<{ text?: string }> | undefined;
+      const text = parts?.[0]?.text || JSON.stringify(content);
       messages.push({
         tipo: "usuario",
-        contenido: (data.content as string) || (data.message as string) || "",
+        contenido: text,
         timestamp,
       });
-    } else if (event.event_type === "agent_response") {
-      const contenido =
-        (data.response as string) || (data.content as string) || "";
-      const fuentes: string[] = [];
+    } else {
+      // Respuesta del agente
+      const parts = content.parts as Array<{ text?: string }> | undefined;
+      const text = parts?.[0]?.text || JSON.stringify(content);
 
-      // Extraer fuentes si las hay
-      if (data.sources) {
-        const sources = data.sources as Array<{ type?: string; title?: string }>;
-        for (const source of sources) {
-          fuentes.push(source.type || source.title || "fuente");
-        }
+      // Buscar fuentes en el contenido
+      const fuentes: string[] = [];
+      if (content.grounding_metadata) {
+        fuentes.push("RAG");
       }
 
       messages.push({
         tipo: "agente",
-        contenido,
+        contenido: text,
         fuentes: fuentes.length > 0 ? fuentes : undefined,
         timestamp,
       });
-    } else if (event.event_type === "rag_query") {
-      messages.push({
-        tipo: "rag",
-        contenido: `Consulta RAG: ${(data.query as string) || ""}`,
-        timestamp,
-      });
-    } else if (event.event_type === "tool_call") {
-      const toolName = (data.tool_name as string) || (data.name as string) || "";
-      if (toolName.includes("rag") || toolName.includes("arbol")) {
-        messages.push({
-          tipo: "herramienta",
-          contenido: `Herramienta: ${toolName}`,
-          timestamp,
-        });
-      }
     }
   }
 
@@ -74,18 +64,13 @@ export async function GET(
 ) {
   try {
     const { sessionId } = await params;
-    const email = request.nextUrl.searchParams.get("email");
     const userId = request.nextUrl.searchParams.get("userId");
 
-    if (!email || !userId) {
+    if (!userId) {
       return NextResponse.json(
-        { error: "Email y userId requeridos" },
+        { error: "userId requerido" },
         { status: 400 }
       );
-    }
-
-    if (!isAuthorizedEmail(email)) {
-      return NextResponse.json({ error: "No autorizado" }, { status: 403 });
     }
 
     // Verificar que la sesión pertenece al usuario
@@ -101,9 +86,9 @@ export async function GET(
       );
     }
 
-    // Obtener eventos de la sesión
+    // Obtener eventos de la sesión (misma query que visor.py)
     const result = await pool.query(
-      `SELECT timestamp, event_type, event_data
+      `SELECT id, session_id, user_id, app_name, author, timestamp, content
        FROM events
        WHERE session_id = $1
        ORDER BY timestamp ASC`,

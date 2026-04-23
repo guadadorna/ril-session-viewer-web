@@ -23,16 +23,16 @@ export default function SessionDetailPage({
   const router = useRouter();
 
   useEffect(() => {
-    const email = sessionStorage.getItem("userEmail");
+    const userName = sessionStorage.getItem("userName");
     const userId = sessionStorage.getItem("userId");
 
-    if (!email || !userId) {
+    if (!userName || !userId) {
       router.push("/");
       return;
     }
 
     fetch(
-      `/api/sessions/${sessionId}?email=${encodeURIComponent(email)}&userId=${encodeURIComponent(userId)}`
+      `/api/sessions/${sessionId}?userId=${encodeURIComponent(userId)}`
     )
       .then((res) => res.json())
       .then((data) => {

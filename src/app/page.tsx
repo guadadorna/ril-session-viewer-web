@@ -4,7 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 
 export default function Home() {
-  const [email, setEmail] = useState("");
+  const [name, setName] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const router = useRouter();
@@ -18,7 +18,7 @@ export default function Home() {
       const res = await fetch("/api/auth", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email }),
+        body: JSON.stringify({ name }),
       });
 
       const data = await res.json();
@@ -29,7 +29,7 @@ export default function Home() {
       }
 
       // Guardar en sessionStorage y redirigir
-      sessionStorage.setItem("userEmail", email);
+      sessionStorage.setItem("userName", data.displayName);
       sessionStorage.setItem("userId", data.userId);
       router.push("/sessions");
     } catch {
@@ -46,22 +46,23 @@ export default function Home() {
           Visor de Sesiones RIL
         </h1>
         <p className="text-gray-600 text-center mb-6">
-          Ingresá tu email para ver tus conversaciones con el agente de seguridad.
+          Ingresá tu nombre o apellido para ver tus conversaciones con el agente de seguridad.
         </p>
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
-            <label htmlFor="email" className="block text-sm font-medium text-gray-700 mb-1">
-              Email
+            <label htmlFor="name" className="block text-sm font-medium text-gray-700 mb-1">
+              Nombre o Apellido
             </label>
             <input
-              type="email"
-              id="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
+              type="text"
+              id="name"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
               className="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent text-gray-900"
-              placeholder="tu@email.com"
+              placeholder="Tu nombre"
               required
+              minLength={2}
             />
           </div>
 
