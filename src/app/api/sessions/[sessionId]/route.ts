@@ -3,6 +3,7 @@ import pool from "@/lib/db";
 
 // Tipos
 interface FunctionResponse {
+  id?: string;
   name?: string;
   response?: {
     result?: unknown;
@@ -10,9 +11,15 @@ interface FunctionResponse {
   };
 }
 
+interface FunctionCall {
+  id?: string;
+  name?: string;
+  args?: Record<string, unknown>;
+}
+
 interface Part {
   text?: string;
-  functionCall?: unknown;
+  functionCall?: FunctionCall;
   functionResponse?: FunctionResponse;
 }
 
@@ -99,6 +106,8 @@ function parseEventsDetailed(events: Event[]): Turno[] {
   const turnos: Turno[] = [];
   let currentTurno: Turno | null = null;
   let pendingFuentes: Fuentes = createEmptyFuentes();
+  // Para capturar los args de functionCall y asociarlos con el functionResponse
+  const pendingFunctionCalls: Map<string, Record<string, unknown>> = new Map();
 
   for (const event of events) {
     const author = event.author || "";
@@ -156,6 +165,15 @@ function parseEventsDetailed(events: Event[]): Turno[] {
       // Respuesta del agente
       else if (part.text && author !== "user" && currentTurno) {
         currentTurno.agente += part.text + "\n";
+      }
+
+      // Capturar functionCall para save_memory (guardar args para después)
+      if (part.functionCall && currentTurno) {
+        const fc = part.functionCall;
+        const fcName = (fc.name || "").toLowerCase();
+        if ((fcName.includes("save_user_memory") || fcName.includes("save_memory")) && fc.id && fc.args) {
+          pendingFunctionCalls.set(fc.id, fc.args);
+        }
       }
 
       // Tool response - extraer fuentes
@@ -244,9 +262,21 @@ function parseEventsDetailed(events: Event[]): Turno[] {
           }
         }
 
-        // Memoria guardada
+        // Memoria guardada - usar los args del functionCall que capturamos antes
         else if (name.includes("save_user_memory") || name.includes("save_memory")) {
-          if (typeof result === "object" && result !== null) {
+          // Buscar los args del functionCall correspondiente por ID
+          const fcId = fr.id;
+          const savedArgs = fcId ? pendingFunctionCalls.get(fcId) : null;
+
+          if (savedArgs) {
+            // Los args contienen lo que realmente se guardó
+            currentTurno.fuentes.memoria_guardada.push({
+              tipo: String(savedArgs.record_type || savedArgs.tipo || "dato"),
+              datos: savedArgs,
+            });
+            pendingFunctionCalls.delete(fcId!);
+          } else if (typeof result === "object" && result !== null) {
+            // Fallback al resultado si no encontramos los args
             const r = result as Record<string, unknown>;
             currentTurno.fuentes.memoria_guardada.push({
               tipo: String(r.record_type || "dato"),
