@@ -117,7 +117,14 @@ function parseEventsDetailed(events: Event[]): Turno[] {
 
     if (typeof content !== "object") continue;
 
+    // A veces el content tiene structure {role, parts} directamente
+    // otras veces parts[0].text contiene JSON serializado
     const parts = (content as Content).parts || [];
+
+    // Si no hay parts, puede ser que content sea {parts: [...]} directamente
+    if (parts.length === 0 && Array.isArray((content as {parts?: unknown[]}).parts)) {
+      continue;
+    }
 
     for (const part of parts) {
       // Mensaje de usuario = nuevo turno
@@ -295,7 +302,17 @@ export async function GET(
       [sessionId]
     );
 
+    // Debug: log first few events to see structure
+    console.log("Total events:", result.rows.length);
+    if (result.rows.length > 0) {
+      const firstEvent = result.rows[0];
+      console.log("First event author:", firstEvent.author);
+      console.log("First event content type:", typeof firstEvent.content);
+      console.log("First event content sample:", JSON.stringify(firstEvent.content).substring(0, 500));
+    }
+
     const turnos = parseEventsDetailed(result.rows);
+    console.log("Parsed turnos:", turnos.length);
 
     // Calcular estadísticas
     const stats = {
