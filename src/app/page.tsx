@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 
 export default function Home() {
   const [name, setName] = useState("");
@@ -80,6 +81,15 @@ export default function Home() {
             {loading ? "Verificando..." : "Ingresar"}
           </button>
         </form>
+
+        <div className="mt-6 pt-6 border-t border-gray-200">
+          <Link
+            href="/feedback"
+            className="block text-center text-sm text-gray-600 hover:text-blue-600"
+          >
+            Ver feedback del equipo
+          </Link>
+        </div>
       </div>
     </div>
   );

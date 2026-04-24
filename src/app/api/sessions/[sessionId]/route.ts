@@ -357,25 +357,29 @@ export async function GET(
   try {
     const { sessionId } = await params;
     const userId = request.nextUrl.searchParams.get("userId");
+    const internal = request.nextUrl.searchParams.get("internal") === "true";
 
-    if (!userId) {
-      return NextResponse.json(
-        { error: "userId requerido" },
-        { status: 400 }
+    // Para acceso interno (desde /feedback), no requerimos userId
+    if (!internal) {
+      if (!userId) {
+        return NextResponse.json(
+          { error: "userId requerido" },
+          { status: 400 }
+        );
+      }
+
+      // Verificar que la sesión pertenece al usuario
+      const verifyResult = await pool.query(
+        `SELECT session_id FROM events WHERE session_id = $1 AND user_id = $2 LIMIT 1`,
+        [sessionId, userId]
       );
-    }
 
-    // Verificar que la sesión pertenece al usuario
-    const verifyResult = await pool.query(
-      `SELECT session_id FROM events WHERE session_id = $1 AND user_id = $2 LIMIT 1`,
-      [sessionId, userId]
-    );
-
-    if (verifyResult.rows.length === 0) {
-      return NextResponse.json(
-        { error: "Sesión no encontrada o no autorizada" },
-        { status: 404 }
-      );
+      if (verifyResult.rows.length === 0) {
+        return NextResponse.json(
+          { error: "Sesión no encontrada o no autorizada" },
+          { status: 404 }
+        );
+      }
     }
 
     // Obtener eventos de la sesión (misma query que visor.py)

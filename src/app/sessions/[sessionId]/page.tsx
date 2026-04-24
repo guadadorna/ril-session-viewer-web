@@ -1,8 +1,16 @@
 "use client";
 
-import { useEffect, useState, use } from "react";
+import { useEffect, useState, use, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+
+const TIPOS_PROBLEMA = [
+  { value: "invento_informacion", label: "Inventó información" },
+  { value: "no_uso_fuentes", label: "No usó las fuentes" },
+  { value: "respuesta_incompleta", label: "Respuesta incompleta" },
+  { value: "respuesta_generica", label: "Respuesta genérica" },
+  { value: "otro", label: "Otro" },
+];
 
 interface RagDoc {
   titulo: string;
@@ -45,6 +53,118 @@ interface Stats {
   totalArbol: number;
   totalMemoriaLeida: number;
   totalMemoriaGuardada: number;
+}
+
+interface FeedbackModalProps {
+  isOpen: boolean;
+  onClose: () => void;
+  onSubmit: (data: { tipo_problema: string; comentario: string; reporter_name: string }) => void;
+  turnoNumero: number;
+  isSubmitting: boolean;
+}
+
+function FeedbackModal({ isOpen, onClose, onSubmit, turnoNumero, isSubmitting }: FeedbackModalProps) {
+  const [tipoproblema, setTipoProblema] = useState("");
+  const [comentario, setComentario] = useState("");
+  const [reporterName, setReporterName] = useState("");
+
+  // Recuperar nombre del localStorage si existe
+  useEffect(() => {
+    const savedName = localStorage.getItem("feedbackReporterName");
+    if (savedName) setReporterName(savedName);
+  }, []);
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!tipoproblema || !reporterName.trim()) return;
+
+    // Guardar nombre para próxima vez
+    localStorage.setItem("feedbackReporterName", reporterName.trim());
+
+    onSubmit({
+      tipo_problema: tipoproblema,
+      comentario: comentario.trim(),
+      reporter_name: reporterName.trim(),
+    });
+  };
+
+  if (!isOpen) return null;
+
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+      <div className="bg-white rounded-lg p-6 max-w-md w-full mx-4">
+        <h3 className="text-lg font-bold text-gray-800 mb-4">
+          Reportar problema - Turno {turnoNumero}
+        </h3>
+
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Tipo de problema *
+            </label>
+            <select
+              value={tipoproblema}
+              onChange={(e) => setTipoProblema(e.target.value)}
+              className="w-full border border-gray-300 rounded-md px-3 py-2 text-gray-800"
+              required
+            >
+              <option value="">Seleccionar...</option>
+              {TIPOS_PROBLEMA.map((tipo) => (
+                <option key={tipo.value} value={tipo.value}>
+                  {tipo.label}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Comentario
+            </label>
+            <textarea
+              value={comentario}
+              onChange={(e) => setComentario(e.target.value)}
+              className="w-full border border-gray-300 rounded-md px-3 py-2 text-gray-800"
+              rows={3}
+              placeholder="Explicá qué está mal..."
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Tu nombre *
+            </label>
+            <input
+              type="text"
+              value={reporterName}
+              onChange={(e) => setReporterName(e.target.value)}
+              className="w-full border border-gray-300 rounded-md px-3 py-2 text-gray-800"
+              placeholder="Ej: María"
+              required
+            />
+          </div>
+
+          <div className="flex gap-3 pt-2">
+            <button
+              type="button"
+              onClick={onClose}
+              className="flex-1 px-4 py-2 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50"
+              disabled={isSubmitting}
+            >
+              Cancelar
+            </button>
+            <button
+              type="submit"
+              className="flex-1 px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 disabled:opacity-50"
+              disabled={isSubmitting || !tipoproblema || !reporterName.trim()}
+            >
+              {isSubmitting ? "Enviando..." : "Reportar"}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
 }
 
 function CollapsibleSection({
@@ -143,20 +263,73 @@ export default function SessionDetailPage({
   const [stats, setStats] = useState<Stats | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [feedbackModal, setFeedbackModal] = useState<{ isOpen: boolean; turnoNumero: number }>({
+    isOpen: false,
+    turnoNumero: 0,
+  });
+  const [isSubmittingFeedback, setIsSubmittingFeedback] = useState(false);
+  const [feedbackSuccess, setFeedbackSuccess] = useState<number | null>(null);
   const router = useRouter();
+
+  const handleOpenFeedback = useCallback((turnoNumero: number) => {
+    setFeedbackModal({ isOpen: true, turnoNumero });
+  }, []);
+
+  const handleCloseFeedback = useCallback(() => {
+    setFeedbackModal({ isOpen: false, turnoNumero: 0 });
+  }, []);
+
+  const handleSubmitFeedback = useCallback(
+    async (data: { tipo_problema: string; comentario: string; reporter_name: string }) => {
+      setIsSubmittingFeedback(true);
+      try {
+        const response = await fetch("/api/feedback", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            session_id: sessionId,
+            turno_numero: feedbackModal.turnoNumero,
+            ...data,
+          }),
+        });
+
+        if (response.ok) {
+          setFeedbackSuccess(feedbackModal.turnoNumero);
+          handleCloseFeedback();
+          // Limpiar mensaje de éxito después de 3 segundos
+          setTimeout(() => setFeedbackSuccess(null), 3000);
+        } else {
+          const result = await response.json();
+          alert(result.error || "Error al enviar feedback");
+        }
+      } catch {
+        alert("Error al enviar feedback");
+      } finally {
+        setIsSubmittingFeedback(false);
+      }
+    },
+    [sessionId, feedbackModal.turnoNumero, handleCloseFeedback]
+  );
 
   useEffect(() => {
     const userName = sessionStorage.getItem("userName");
     const userId = sessionStorage.getItem("userId");
 
-    if (!userName || !userId) {
+    // Verificar si viene desde /feedback (modo interno)
+    const isInternal = document.referrer.includes("/feedback") ||
+                       window.location.search.includes("internal=true");
+
+    if (!isInternal && (!userName || !userId)) {
       router.push("/");
       return;
     }
 
-    fetch(
-      `/api/sessions/${sessionId}?userId=${encodeURIComponent(userId)}`
-    )
+    // Construir URL con parámetros apropiados
+    const params = isInternal
+      ? "internal=true"
+      : `userId=${encodeURIComponent(userId!)}`;
+
+    fetch(`/api/sessions/${sessionId}?${params}`)
       .then((res) => res.json())
       .then((data) => {
         if (data.error) {
@@ -228,9 +401,21 @@ export default function SessionDetailPage({
         ) : (
           <div className="space-y-6">
             {turnos.map((turno, idx) => (
-              <div key={idx} className="bg-white rounded-lg shadow-md overflow-hidden">
-                <div className="bg-gray-700 text-white px-4 py-2 text-sm font-medium">
-                  Turno {idx + 1}
+              <div key={idx} className="bg-white rounded-lg shadow-md overflow-hidden" id={`turno-${idx + 1}`}>
+                <div className="bg-gray-700 text-white px-4 py-2 text-sm font-medium flex justify-between items-center">
+                  <span>Turno {idx + 1}</span>
+                  <div className="flex items-center gap-2">
+                    {feedbackSuccess === idx + 1 && (
+                      <span className="text-green-300 text-xs">Reportado</span>
+                    )}
+                    <button
+                      onClick={() => handleOpenFeedback(idx + 1)}
+                      className="text-xs bg-red-500 hover:bg-red-600 px-2 py-1 rounded"
+                      title="Reportar problema con esta respuesta"
+                    >
+                      Reportar
+                    </button>
+                  </div>
                 </div>
 
                 {/* Usuario */}
@@ -281,6 +466,14 @@ export default function SessionDetailPage({
             ))}
           </div>
         )}
+
+        <FeedbackModal
+          isOpen={feedbackModal.isOpen}
+          onClose={handleCloseFeedback}
+          onSubmit={handleSubmitFeedback}
+          turnoNumero={feedbackModal.turnoNumero}
+          isSubmitting={isSubmittingFeedback}
+        />
       </div>
     </div>
   );
